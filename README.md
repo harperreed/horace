@@ -8,7 +8,7 @@ I am using the event-based irc framework from: [fluffle/goirc](https://github.co
 
 Install dependencies:
 
-  go get github.com/gosexy/yaml
+  	go get github.com/gosexy/yaml
 	go get github.com/fluffle/goirc/client
 
 Compile:
