@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	irc "github.com/fluffle/goirc/client"
+	"github.com/fluffle/goevent/event"
 	"github.com/fluffle/golog/logging"
 	"github.com/gosexy/yaml"
 	"os"
@@ -18,6 +19,16 @@ var channel *string = flag.String("channel", "", "IRC channel")
 var nick *string = flag.String("nick", "", "IRC nickname")
 var realname *string = flag.String("realname", "Go Bot", "IRC realname")
 var rejoin_on_kick *bool = flag.Bool("rejoin_on_kick", true, "Rejoin on kick")
+var command_char *string = flag.String("command_char", "!", "Command character")
+
+
+type BotCommandHandler func( *irc.Conn, *irc.Line, []string)
+
+func NewHandler(f BotCommandHandler) event.Handler {
+	return event.NewHandler(func(ev ...interface{}) {
+		f(ev[0].(*irc.Conn), ev[1].(*irc.Line), ev[2].([]string))
+	})
+}
 
 func main() {
 
@@ -26,8 +37,7 @@ func main() {
 	log := logging.InitFromFlags()
 
 	// setup logging
-
-	//log.SetLogLevel(2)
+	//log.SetLogLevel(5)
 
 	// handle configuration
 
@@ -70,14 +80,37 @@ func main() {
 		log.Debug("Read rejoin_on_kick from flag: %t ", *rejoin_on_kick)
 	}
 
+	// set up bot command event registry
+	bot_command_registry := event.NewRegistry()
+
+
+	// Bot command handlers
+
+	// op
+	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
+		conn.Privmsg("#harper", "deop " +commands[1])
+		fmt.Printf("%q\n", commands)
+	}), "op")
+	
+	//deop
+	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
+		conn.Privmsg("#harper", "deop " +commands[1])
+	}), "deop")
+
+	// kick
+	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
+		conn.Privmsg("#harper", "kick")
+	}), "kick")
+
+
 	// create new IRC connection
 	log.Info("create new IRC connection")
-	c := irc.SimpleClient(*nick, *realname)
+	irc_client := irc.SimpleClient(*nick, *realname)
 
-	// HANDLERS!
+	// IRC HANDLERS!
 
-	c.EnableStateTracking()
-	c.AddHandler("connected",
+	irc_client.EnableStateTracking()
+	irc_client.AddHandler("connected",
 		func(conn *irc.Conn, line *irc.Line) {
 			log.Info("connected as " + *nick)
 			conn.Join(*channel)
@@ -85,25 +118,26 @@ func main() {
 
 	// Set up a handler to notify of disconnect events.
 	quit := make(chan bool)
-	c.AddHandler("disconnected",
+	irc_client.AddHandler("disconnected",
 		func(conn *irc.Conn, line *irc.Line) {
 			log.Info("disconnected")
 			quit <- true
 		})
 
 	//Handle Private messages
-	c.AddHandler("PRIVMSG",
+	irc_client.AddHandler("PRIVMSG",
 		func(conn *irc.Conn, line *irc.Line) {
 			log.Info("privmsg")
-			log.Info(line.Raw)
-			log.Info(line.Cmd)
-			log.Info(line.Args[0])
-			log.Info("Message received on " + line.Args[0] + " from " + line.Nick + ": " + line.Args[1])
-			c.Privmsg(line.Args[0], "ECHO: "+line.Args[1])
+			irc_input := strings.ToLower(line.Args[1])
+			if strings.HasPrefix(irc_input,*command_char) {
+				irc_command := strings.Split(irc_input[1:], " ")
+				bot_command_registry.Dispatch(irc_command[0], conn, line, irc_command)
+			}
+			
 		})
 
 	//handle kick by rejoining kicked channel
-	c.AddHandler("KICK",
+	irc_client.AddHandler("KICK",
 		func(conn *irc.Conn, line *irc.Line) {
 			log.Info("Kicked from " + line.Args[0])
 			if *rejoin_on_kick {
@@ -112,14 +146,22 @@ func main() {
 			}
 		})
 
+	//notify on MODE
+	irc_client.AddHandler("MODE",
+		func(conn *irc.Conn, line *irc.Line) {
+			for i, v := range line.Args {
+				fmt.Printf("%d = %d\n", i, v)
+			}
+		})
+
 	//notify on join
-	c.AddHandler("JOIN",
+	irc_client.AddHandler("JOIN",
 		func(conn *irc.Conn, line *irc.Line) {
 			log.Info("Joined " + line.Args[0])
 		})
 
 	//handle topic changes 
-	c.AddHandler("TOPIC",
+	irc_client.AddHandler("TOPIC",
 		func(conn *irc.Conn, line *irc.Line) {
 			log.Info("Topic on " + line.Args[0] + " changed to: " + line.Args[1])
 		})
@@ -148,42 +190,17 @@ func main() {
 	// set up a goroutine to do parsey things with the stuff from stdin
 	go func() {
 		for cmd := range in {
-			if cmd[0] == ':' {
-				switch idx := strings.Index(cmd, " "); {
-				case cmd[1] == 'd':
-					fmt.Printf(c.String())
-				case cmd[1] == 'f':
-					if len(cmd) > 2 && cmd[2] == 'e' {
-						// enable flooding
-						c.Flood = true
-					} else if len(cmd) > 2 && cmd[2] == 'd' {
-						// disable flooding
-						c.Flood = false
-					}
-					for i := 0; i < 20; i++ {
-						c.Privmsg("#", "flood test!")
-					}
-				case idx == -1:
-					continue
-				case cmd[1] == 'x':
-					c.Privmsg("#", "test!")
-				case cmd[1] == 'q':
-					reallyquit = true
-					c.Quit(cmd[idx+1 : len(cmd)])
-				case cmd[1] == 'j':
-					c.Join(cmd[idx+1 : len(cmd)])
-				case cmd[1] == 'p':
-					c.Part(cmd[idx+1 : len(cmd)])
-				}
-			} else {
-				c.Raw(cmd)
+			irc_input := strings.ToLower(cmd)
+			if strings.HasPrefix(irc_input,*command_char) {
+				irc_command := strings.Split(irc_input[1:], " ")
+				fmt.Printf("%q\n", irc_command)
 			}
 		}
 	}()
 
 	for !reallyquit {
 		// connect to server
-		if err := c.Connect(*irc_server); err != nil {
+		if err := irc_client.Connect(*irc_server); err != nil {
 			fmt.Printf("Connection error: %s\n", err)
 			return
 		}
