@@ -21,6 +21,7 @@ func main() {
 			settings.Set("connection/realname", "Go Bot")
 
 			settings.Set("bot_config/rejoin_on_kick", true)
+			settings.Set("bot_config/channel_protection", true)
 			settings.Set("bot_config/owner", "example!example@example/example")
 			settings.Set("bot_config/friends", sugar.List{"friend1!example@example/example", "friend2!example@example/example", "friend2!example@example/example"})
 			settings.Write(settings_filename)

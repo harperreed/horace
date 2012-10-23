@@ -29,11 +29,14 @@ func NewHandler(f BotCommandHandler) event.Handler {
 }
 
 func Trust(identity string, trusted_identities []string) bool {
+	log := logging.InitFromFlags()
 	for _, value := range trusted_identities {
 		if identity == value {
+			log.Info("Authenticated: " + identity)
 			return true
 		}
 	}
+	log.Info("Authentication failed for : " + identity)
 	return false
 }
 
@@ -44,7 +47,7 @@ func main() {
 	log := logging.InitFromFlags()
 
 	// setup logging
-	log.SetLogLevel(5)
+	log.SetLogLevel(2)
 
 	// handle configuration
 
@@ -100,6 +103,32 @@ func main() {
 	reallyquit := false
 
 	// Bot command handlers
+	// addfriend
+	addfriend_state := make(chan string)
+	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
+		if line.Src == owner_nick {
+			channel := line.Args[0]
+			if len(commands) > 1 {
+				target := commands[1]
+				conn.Whois(target)
+				addfriend_state <- target
+
+			} else {
+				conn.Privmsg(channel, line.Nick+": use !addfriend <friend nick>")
+			}
+		}
+	}), "addfriend")
+
+	//save
+	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
+		if line.Src == owner_nick {
+			channel := line.Args[0]
+			conn.Privmsg(channel, line.Nick+": saving settings")
+			settings.Set("bot_config/friends", friends)
+			settings.Write(*config_file)
+			log.Info("%q", to.List(settings.Get("bot_config/friends")))
+		}
+	}), "save")
 
 	// op
 	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
@@ -107,8 +136,10 @@ func main() {
 			channel := line.Args[0]
 			if len(commands) > 1 {
 				target := commands[1]
+				log.Info("Oping user: " + target)
 				conn.Mode(channel, "+o "+target)
 			} else {
+				log.Info("Oping user: " + line.Nick)
 				conn.Mode(channel, "+o "+line.Nick)
 			}
 		}
@@ -135,10 +166,21 @@ func main() {
 				target := commands[1]
 				kick_message := "get out"
 				if len(commands) > 2 {
+					//this doesn't work. Need to fix. 
 					kick_message = commands[2]
 				}
-				//TODO: if not owner or not self 
-				conn.Kick(channel, target, kick_message)
+				//do'nt kick if owner
+				if target != strings.Split(owner_nick, "!")[0] {
+					//don't kick if self
+					if *nick != target {
+						conn.Kick(channel, target, kick_message)
+					} else {
+						conn.Privmsg(channel, line.Nick+": why would i kick myself?")
+					}
+				} else {
+					conn.Privmsg(channel, line.Nick+": why would i kick my lovely friend "+target+"?")
+
+				}
 			} else {
 				conn.Privmsg(channel, line.Nick+": invalid command")
 			}
@@ -203,8 +245,22 @@ func main() {
 	//notify on MODE
 	irc_client.AddHandler("MODE",
 		func(conn *irc.Conn, line *irc.Line) {
-			for i, v := range line.Args {
-				fmt.Printf("%d = %d\n", i, v)
+			for _, v := range line.Args {
+				log.Info("mode: %q ", v)
+			}
+		})
+
+	//notify on MODE
+	irc_client.AddHandler("311",
+		func(conn *irc.Conn, line *irc.Line) {
+			addedfriend := <-addfriend_state
+			if addedfriend == line.Args[1] {
+				friend := line.Args[1] + "!" + line.Args[2] + "@" + line.Args[3]
+				log.Info("added friend " + friend)
+				trusted_identities = append(trusted_identities, friend)
+				friends = append(friends, friend)
+				conn.Privmsg(strings.Split(owner_nick, "!")[0], line.Nick+": added "+line.Args[1]+" as friend")
+				addfriend_state <- ""
 			}
 		})
 
