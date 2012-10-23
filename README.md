@@ -10,15 +10,17 @@ Install dependencies:
 
   	go get github.com/gosexy/yaml
 	go get github.com/fluffle/goirc/client
+	go get github.com/gosexy/to
 
 Compile:
 	
 	go build build_settings_yaml.go
 	go build bot.go
 
-Generate a config file:
+Generate and edit the config file `settings.yaml`:
 	
 	./build_settings_yaml
+	vi settings.yaml
 	
 Run bot:
 
