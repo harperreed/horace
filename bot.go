@@ -4,9 +4,10 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	irc "github.com/fluffle/goirc/client"
 	"github.com/fluffle/goevent/event"
+	irc "github.com/fluffle/goirc/client"
 	"github.com/fluffle/golog/logging"
+	"github.com/gosexy/to"
 	"github.com/gosexy/yaml"
 	"os"
 	"strings"
@@ -21,13 +22,21 @@ var realname *string = flag.String("realname", "Go Bot", "IRC realname")
 var rejoin_on_kick *bool = flag.Bool("rejoin_on_kick", true, "Rejoin on kick")
 var command_char *string = flag.String("command_char", "!", "Command character")
 
-
-type BotCommandHandler func( *irc.Conn, *irc.Line, []string)
+type BotCommandHandler func(*irc.Conn, *irc.Line, []string)
 
 func NewHandler(f BotCommandHandler) event.Handler {
 	return event.NewHandler(func(ev ...interface{}) {
 		f(ev[0].(*irc.Conn), ev[1].(*irc.Line), ev[2].([]string))
 	})
+}
+
+func Trust(identity string, trusted_identities []string) bool {
+	for _, value := range trusted_identities {
+		if identity == value {
+			return true
+		}
+	}
+	return false
 }
 
 func main() {
@@ -37,7 +46,7 @@ func main() {
 	log := logging.InitFromFlags()
 
 	// setup logging
-	//log.SetLogLevel(5)
+	log.SetLogLevel(5)
 
 	// handle configuration
 
@@ -80,28 +89,62 @@ func main() {
 		log.Debug("Read rejoin_on_kick from flag: %t ", *rejoin_on_kick)
 	}
 
+	owner_nick := to.String(settings.Get("bot_config/owner"))
+	friends := to.List(settings.Get("bot_config/friends"))
+	trusted_identities := make([]string, 0)
+	trusted_identities = append(trusted_identities, owner_nick)
+	for _, value := range friends {
+		trusted_identities = append(trusted_identities, value.(string))
+	}
+
 	// set up bot command event registry
 	bot_command_registry := event.NewRegistry()
-
 
 	// Bot command handlers
 
 	// op
 	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
-		conn.Privmsg("#harper", "deop " +commands[1])
-		fmt.Printf("%q\n", commands)
+		if Trust(line.Src, trusted_identities) {
+			channel := line.Args[0]
+			if len(commands) > 1 {
+				target := commands[1]
+				conn.Mode(channel, "+o "+target)
+			} else {
+				conn.Mode(channel, "+o "+line.Nick)
+			}
+		}
 	}), "op")
-	
+
 	//deop
 	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
-		conn.Privmsg("#harper", "deop " +commands[1])
+		if Trust(line.Src, trusted_identities) {
+			channel := line.Args[0]
+			if len(commands) > 1 {
+				target := commands[1]
+				conn.Mode(channel, "-o "+target)
+			} else {
+				conn.Mode(channel, "-o "+line.Nick)
+			}
+		}
 	}), "deop")
 
 	// kick
 	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
 		conn.Privmsg("#harper", "kick")
+		if Trust(line.Src, trusted_identities) {
+			channel := line.Args[0]
+			if len(commands) > 1 {
+				target := commands[1]
+				kick_message := "get out"
+				if len(commands) > 2 {
+					kick_message = commands[2]
+				}
+				conn.Kick(channel, target, kick_message)
+			} else {
+				conn.Privmsg(channel, line.Nick+": invalid command")
+			}
+		}
 	}), "kick")
-
 
 	// create new IRC connection
 	log.Info("create new IRC connection")
@@ -129,11 +172,11 @@ func main() {
 		func(conn *irc.Conn, line *irc.Line) {
 			log.Info("privmsg")
 			irc_input := strings.ToLower(line.Args[1])
-			if strings.HasPrefix(irc_input,*command_char) {
+			if strings.HasPrefix(irc_input, *command_char) {
 				irc_command := strings.Split(irc_input[1:], " ")
 				bot_command_registry.Dispatch(irc_command[0], conn, line, irc_command)
 			}
-			
+
 		})
 
 	//handle kick by rejoining kicked channel
@@ -191,7 +234,7 @@ func main() {
 	go func() {
 		for cmd := range in {
 			irc_input := strings.ToLower(cmd)
-			if strings.HasPrefix(irc_input,*command_char) {
+			if strings.HasPrefix(irc_input, *command_char) {
 				irc_command := strings.Split(irc_input[1:], " ")
 				fmt.Printf("%q\n", irc_command)
 			}
