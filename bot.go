@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"github.com/fluffle/goevent/event"
@@ -9,7 +8,6 @@ import (
 	"github.com/fluffle/golog/logging"
 	"github.com/gosexy/to"
 	"github.com/gosexy/yaml"
-	"os"
 	"strings"
 )
 
@@ -99,6 +97,7 @@ func main() {
 
 	// set up bot command event registry
 	bot_command_registry := event.NewRegistry()
+	reallyquit := false
 
 	// Bot command handlers
 
@@ -130,7 +129,6 @@ func main() {
 
 	// kick
 	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
-		conn.Privmsg("#harper", "kick")
 		if Trust(line.Src, trusted_identities) {
 			channel := line.Args[0]
 			if len(commands) > 1 {
@@ -139,12 +137,25 @@ func main() {
 				if len(commands) > 2 {
 					kick_message = commands[2]
 				}
+				//TODO: if not owner or not self 
 				conn.Kick(channel, target, kick_message)
 			} else {
 				conn.Privmsg(channel, line.Nick+": invalid command")
 			}
 		}
 	}), "kick")
+
+	//quit
+	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
+		if line.Src == owner_nick {
+			quit_message := "i died"
+			reallyquit = true
+			if len(commands) > 1 {
+				quit_message = commands[1]
+			}
+			conn.Quit(quit_message)
+		}
+	}), "quit")
 
 	// create new IRC connection
 	log.Info("create new IRC connection")
@@ -209,37 +220,7 @@ func main() {
 			log.Info("Topic on " + line.Args[0] + " changed to: " + line.Args[1])
 		})
 
-	//GO ROUTINES!
-
 	// set up a goroutine to read commands from stdin
-	in := make(chan string, 4)
-	reallyquit := false
-	go func() {
-		con := bufio.NewReader(os.Stdin)
-		for {
-			s, err := con.ReadString('\n')
-			if err != nil {
-				// wha?, maybe ctrl-D...
-				close(in)
-				break
-			}
-			// no point in sending empty lines down the channel
-			if len(s) > 2 {
-				in <- s[0 : len(s)-1]
-			}
-		}
-	}()
-
-	// set up a goroutine to do parsey things with the stuff from stdin
-	go func() {
-		for cmd := range in {
-			irc_input := strings.ToLower(cmd)
-			if strings.HasPrefix(irc_input, *command_char) {
-				irc_command := strings.Split(irc_input[1:], " ")
-				fmt.Printf("%q\n", irc_command)
-			}
-		}
-	}()
 
 	for !reallyquit {
 		// connect to server
