@@ -47,16 +47,15 @@ Currently the bot idles and returns to a channel on being kicked.
 
 I would like it to do at a minimum the following:
 
-* Everything
 * short urling
 * Channel management
-	* oping
+	* oping (done)
 	* topic control
-	* kicking
+	* kicking (doneish)
 	* banning	
-* friends/enemies
+* friends/enemies (friends doneish)
 * utilities (twitter, weather, etc)
-* new name
+* new name (done)
 * webhooks
 
 I would also like to experiment with a way to make it a bit more plugable. 
