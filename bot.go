@@ -132,6 +132,21 @@ func main() {
 		}
 	}), "save")
 
+	//reload
+	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
+		if line.Src == owner_nick {
+			channel := line.Args[0]
+			conn.Privmsg(channel, line.Nick+": reloading settings")
+			friends := to.List(settings.Get("bot_config/friends"))
+			trusted_identities = make([]string, 0)
+			trusted_identities = append(trusted_identities, owner_nick)
+			for _, value := range friends {
+				trusted_identities = append(trusted_identities, value.(string))
+			}
+			log.Info("%q", to.List(settings.Get("bot_config/friends")))
+		}
+	}), "reload")
+
 	// op
 	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
 		if Trust(line.Src, trusted_identities) {
