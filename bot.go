@@ -110,7 +110,9 @@ func main() {
 			channel := line.Args[0]
 			if len(commands) > 1 {
 				target := commands[1]
+				log.Debug("adding friend: %q", target)
 				conn.Whois(target)
+				log.Debug("triggering channel: %q", target)
 				addfriend_state <- target
 
 			} else {
@@ -254,13 +256,18 @@ func main() {
 	irc_client.AddHandler("311",
 		func(conn *irc.Conn, line *irc.Line) {
 			addedfriend := <-addfriend_state
+			log.Info("addfriend channel: %q", addedfriend)
 			if addedfriend == line.Args[1] {
 				friend := line.Args[1] + "!" + line.Args[2] + "@" + line.Args[3]
-				log.Info("added friend " + friend)
+				log.Debug("added friend " + friend)
 				trusted_identities = append(trusted_identities, friend)
 				friends = append(friends, friend)
+				log.Debug("friends: %q", friends)
 				conn.Privmsg(strings.Split(owner_nick, "!")[0], line.Nick+": added "+line.Args[1]+" as friend")
-				addfriend_state <- ""
+				//addfriend_state <- ""
+			} else {
+				log.Info("addfriend channel is empty: %q", addedfriend)
+
 			}
 		})
 
