@@ -259,6 +259,12 @@ func main() {
 			}
 		})
 
+	//notify on 332 - topic reply on join to channel
+	irc_client.AddHandler("332",
+		func(conn *irc.Conn, line *irc.Line) {
+			log.Debug("Topic is %q, on %q ", line.Args[2], line.Args[1])
+		})
+
 	//notify on MODE
 	irc_client.AddHandler("MODE",
 		func(conn *irc.Conn, line *irc.Line) {
@@ -267,7 +273,7 @@ func main() {
 			}
 		})
 
-	//notify on MODE
+	//notify on WHOIS
 	irc_client.AddHandler("311",
 		func(conn *irc.Conn, line *irc.Line) {
 			addedfriend := <-addfriend_state
