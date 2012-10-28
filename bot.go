@@ -6,8 +6,15 @@ import (
 	"github.com/fluffle/goevent/event"
 	irc "github.com/fluffle/goirc/client"
 	"github.com/fluffle/golog/logging"
+	"github.com/gosexy/sugar"
 	"github.com/gosexy/to"
 	"github.com/gosexy/yaml"
+	"github.com/harperreed/gobitly/bitly"
+	"html"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"regexp"
 	"strings"
 )
 
@@ -19,6 +26,7 @@ var nick *string = flag.String("nick", "", "IRC nickname")
 var realname *string = flag.String("realname", "Go Bot", "IRC realname")
 var rejoin_on_kick *bool = flag.Bool("rejoin_on_kick", true, "Rejoin on kick")
 var command_char *string = flag.String("command_char", "!", "Command character")
+var generate_config *bool = flag.Bool("generate_config", false, "Generate a config file")
 
 type BotCommandHandler func(*irc.Conn, *irc.Line, []string)
 
@@ -40,6 +48,72 @@ func Trust(identity string, trusted_identities []string) bool {
 	return false
 }
 
+func grab_title(url string, channel chan<- string) {
+	res, err := http.Get(url)
+	title := ""
+	if err == nil {
+
+		title_regex := regexp.MustCompile(`<title.*>([\s\S]*)</title>`)
+		body, _ := ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		body_html := string(body)
+		if err == nil {
+			match := title_regex.FindAllStringSubmatch(body_html, -1)
+			title = match[0][1]
+			title = html.UnescapeString(title)
+		}
+	}
+	channel <- title
+}
+
+func shorten_url(long_url string, channel chan<- string, username string, api_key string) {
+	bitly.SetUser(username)
+	bitly.SetKey(api_key)
+	max_url_length := 20
+	url := long_url
+	if len(url) > max_url_length {
+		short_url, error := bitly.Shorten(url)
+		if error == nil {
+			url = short_url
+		}
+	}
+	channel <- url
+}
+
+func generate_config_file(settings_filename string) {
+	log := logging.InitFromFlags()
+
+	// setup logging
+	log.SetLogLevel(2)
+
+	if _, err := os.Stat(settings_filename); err != nil {
+		if os.IsNotExist(err) {
+			log.Info("Creating settings file: " + settings_filename)
+			settings := yaml.New()
+			settings.Set("connection/irc_server", "irc.example.net")
+			settings.Set("connection/channel", "#example")
+			settings.Set("connection/nick", "gobot")
+			settings.Set("connection/realname", "Go Bot")
+
+			settings.Set("bot_config/rejoin_on_kick", true)
+			settings.Set("bot_config/channel_protection", true)
+			settings.Set("bot_config/owner", "example!example@example/example")
+			settings.Set("bot_config/friends", sugar.List{"friend1!example@example/example", "friend2!example@example/example", "friend2!example@example/example"})
+
+			settings.Set("bitly/shorturls_enabled", true)
+			settings.Set("bitly/username", "example")
+			settings.Set("bitly/api_key", "xxxxxxxxxxxxxxxxxxxxx")
+
+			settings.Write(settings_filename)
+		} else {
+
+		}
+	} else {
+		log.Info("Settings file: " + settings_filename + " already exists")
+	}
+
+}
+
 func main() {
 
 	// Parse flags from command line
@@ -48,6 +122,20 @@ func main() {
 
 	// setup logging
 	log.SetLogLevel(2)
+
+	if _, err := os.Stat(*config_file); err != nil {
+
+		generate_config_file(*config_file)
+		log.Error("You must edit the " + *config_file + " file before continuing")
+		os.Exit(0)
+	}
+
+	//generate a config file if it isn't found
+	if *generate_config {
+		generate_config_file(*config_file)
+		log.Error("You must edit the " + *config_file + " file before continuing")
+		os.Exit(0)
+	}
 
 	// handle configuration
 
@@ -88,6 +176,16 @@ func main() {
 		log.Debug("Read rejoin_on_kick from config file: %t ", *rejoin_on_kick)
 	} else {
 		log.Debug("Read rejoin_on_kick from flag: %t ", *rejoin_on_kick)
+	}
+
+	// bitly 
+
+	shorturl_enabled := settings.Get("bitly/shorturls_enabled").(bool)
+	bitly_username := settings.Get("bitly/username").(string)
+	bitly_api_key := settings.Get("bitly/api_key").(string)
+	if shorturl_enabled {
+		bitly.SetUser(bitly_username)
+		bitly.SetKey(bitly_api_key)
 	}
 
 	owner_nick := to.String(settings.Get("bot_config/owner"))
@@ -216,6 +314,28 @@ func main() {
 		}
 	}), "quit")
 
+	//urlshortener
+	bot_command_registry.AddHandler(NewHandler(func(conn *irc.Conn, line *irc.Line, commands []string) {
+		log.Info("URLS event")
+		channel := line.Args[0]
+		for _, long_url := range commands {
+			url := long_url
+			url_util_channel := make(chan string)
+			go grab_title(url, url_util_channel)
+			title := <-url_util_channel
+			go shorten_url(url, url_util_channel, bitly_username, bitly_api_key)
+			short_url := <-url_util_channel
+			output := ""
+			if short_url != long_url {
+				output = output + "<" + short_url + "> "
+			}
+			if title != "" {
+				output = output + " " + title
+			}
+			conn.Privmsg(channel, output)
+		}
+	}), "urlshortener")
+
 	// create new IRC connection
 	log.Info("create new IRC connection")
 	irc_client := irc.SimpleClient(*nick, *realname)
@@ -245,6 +365,11 @@ func main() {
 			if strings.HasPrefix(irc_input, *command_char) {
 				irc_command := strings.Split(irc_input[1:], " ")
 				bot_command_registry.Dispatch(irc_command[0], conn, line, irc_command)
+			}
+			url_regex := regexp.MustCompile(`\b(([\w-]+://?|www[.])[^\s()<>]+(?:\([\w\d]+\)|([^[:punct:]\s]|/)))`)
+			urls := url_regex.FindAllString(irc_input, -1)
+			if len(urls) > 0 {
+				bot_command_registry.Dispatch("urlshortener", conn, line, urls)
 			}
 
 		})
@@ -306,14 +431,17 @@ func main() {
 
 	// set up a goroutine to read commands from stdin
 
-	for !reallyquit {
-		// connect to server
-		if err := irc_client.Connect(*irc_server); err != nil {
-			fmt.Printf("Connection error: %s\n", err)
-			return
-		}
+	if *generate_config == false {
 
-		// wait on quit channel
-		<-quit
+		for !reallyquit {
+			// connect to server
+			if err := irc_client.Connect(*irc_server); err != nil {
+				fmt.Printf("Connection error: %s\n", err)
+				return
+			}
+
+			// wait on quit channel
+			<-quit
+		}
 	}
 }
