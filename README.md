@@ -1,6 +1,6 @@
-#horace: go IRC bot
+#Horace: a GO IRC bot
 
-I wanted a project that would help me learn go. I learned python with irc and xmpp bots, i learned network programming in perl with irc bots - so it only seemed fair that I learn go by writing an IRC bot. 
+I wanted a project that would help me learn [go](http://golang.com). I learned python with irc and [xmpp](http://wokkel.ik.nu/) [bots](http://excla.im/), i learned network programming in perl with irc bots - so it only seemed fair that I learn go by writing an IRC bot. 
 
 I am using the event-based irc framework from: [fluffle/goirc](https://github.com/fluffle/goirc). It works very well and being event based, makes the code fun. 
 
@@ -8,54 +8,93 @@ I am using the event-based irc framework from: [fluffle/goirc](https://github.co
 
 Install dependencies:
 
-  	go get github.com/gosexy/yaml
+	go get github.com/gosexy/yaml
 	go get github.com/fluffle/goirc/client
 	go get github.com/gosexy/to
+	go get github.com/fluffle/goevent/event
+	go get github.com/fluffle/golog/logging
+	go get github.com/gosexy/sugar
+	go get github.com/gosexy/to
+	go get github.com/harperreed/gobitly/bitly
 
 Compile:
 	
-	go build build_settings_yaml.go
 	go build bot.go
 
-Generate and edit the config file `settings.yaml`:
-	
-	./build_settings_yaml
-	vi settings.yaml
 	
 Run bot:
 
 	./bot 
+
+This will generate a blank config file.
+
+	INFO Creating settings file: settings.yaml
+	ERROR You must edit the settings.yaml file before continuing
+
+
+Edit the config file `settings.yaml`:
 	
+	vi settings.yaml
+
+And run the bot again
+
+	./bot
+
+Your bot will connect
+
+	INFO Read configuration file: settings.yaml
+	INFO create new IRC connection
+	INFO irc.Connect(): Connecting to irc.example.net:6667 without SSL.
+	INFO connected as gobo667
+	INFO mode: "gobot" 
+	INFO mode: "+i" 
+	INFO Joined #example
+
 
 ##Config
 
-Example `config.yaml`. Rather self explanatory.
+Example `settings.yaml`. Rather self explanatory.
 
-	bot_config:
-	  rejoin_on_kick: true
-	connection:
-	  channel: '#example'
-	  irc_server: irc.example.net
-	  nick: gobot
-	  realname: Go Bot
 
-Generate by running the `build_settings_yaml`
+	bitly:
+    	api_key: xxxxxxxxxxxxxxxxxxxxx
+	    shorturls_enabled: true
+	    username: example
+  	bot_config:
+    	channel_protection: true
+	    friends:
+	    - friend1!example@example/example
+	    - friend2!example@example/example
+	    - friend2!example@example/example
+	    owner: example!example@example/example
+    	rejoin_on_kick: true
+    connection:
+    	channel: '#example'
+	    irc_server: irc.example.net
+	    nick: gobot
+	    realname: Go Bot
+
+You can generate a new config by running the `./bot -config_file=settings.yaml -generate_config=true`
+
+##Command line flags
+
+	Usage of ./bot:
+	  -channel="": IRC channel
+	  -command_char="!": Command character
+	  -config_file="settings.yaml": YAML config file
+	  -generate_config=false: Generate a config file
+	  -irc_server="": IRC server
+	  -nick="": IRC nickname
+	  -realname="Go Bot": IRC realname
+	  -rejoin_on_kick=true: Rejoin on kick
 
 ##Todo
 
-Currently the bot idles and returns to a channel on being kicked. 
-
-I would like it to do at a minimum the following:
-
-* short urling
 * Channel management
-	* oping (done)
 	* topic control
-	* kicking (doneish)
 	* banning	
-* friends/enemies (friends doneish)
+* enemies
 * utilities (twitter, weather, etc)
-* new name (done)
 * webhooks
 
 I would also like to experiment with a way to make it a bit more plugable. 
