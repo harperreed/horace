@@ -319,15 +319,29 @@ func main() {
 		log.Info("URLS event")
 		channel := line.Args[0]
 		for _, long_url := range commands {
-			url := long_url
+			work_url := long_url
+			work_urlr := regexp.MustCompile(`^http://([^/?]+)(/(?:[^/?]+/)*)?([^./?][^/?]+?)?(\.[^.?]*)?(\?.*)?$`)
+			url_parts := work_urlr.FindAllStringSubmatch(work_url, -1)
+			domain := url_parts[0][1]
+			ext := url_parts[0][4]
+
+			forbidden_extensions := "png|gif|jpg|mp3|avi|md"
+			extension_regex := regexp.MustCompile(`(` + forbidden_extensions + `)`)
+			extension_test := extension_regex.FindAllStringSubmatch(ext, -1)
+
+			title := ""
 			url_util_channel := make(chan string)
-			go grab_title(url, url_util_channel)
-			title := <-url_util_channel
-			go shorten_url(url, url_util_channel, bitly_username, bitly_api_key)
+			if extension_test == nil {
+				go grab_title(work_url, url_util_channel)
+				title = <-url_util_channel
+			}
+
+			go shorten_url(work_url, url_util_channel, bitly_username, bitly_api_key)
 			short_url := <-url_util_channel
 			output := ""
 			if short_url != long_url {
-				output = output + "<" + short_url + "> "
+
+				output = output + "<" + short_url + "> (at " + domain + ") "
 			}
 			if title != "" {
 				output = output + " " + title
