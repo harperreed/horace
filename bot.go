@@ -320,7 +320,7 @@ func main() {
 		channel := line.Args[0]
 		for _, long_url := range commands {
 			work_url := long_url
-			work_urlr := regexp.MustCompile(`^http://([^/?]+)(/(?:[^/?]+/)*)?([^./?][^/?]+?)?(\.[^.?]*)?(\?.*)?$`)
+			work_urlr := regexp.MustCompile(`^[\w-]+://([^/?]+)(/(?:[^/?]+/)*)?([^./?][^/?]+?)?(\.[^.?]*)?(\?.*)?$`)
 			url_parts := work_urlr.FindAllStringSubmatch(work_url, -1)
 			domain := url_parts[0][1]
 			ext := url_parts[0][4]
