@@ -325,7 +325,7 @@ func main() {
 			domain := url_parts[0][1]
 			ext := url_parts[0][4]
 
-			forbidden_extensions := "png|gif|jpg|mp3|avi|md"
+			forbidden_extensions := "png|gif|jpg|mp3|avi|md|zip"
 			extension_regex := regexp.MustCompile(`(` + forbidden_extensions + `)`)
 			extension_test := extension_regex.FindAllStringSubmatch(ext, -1)
 
